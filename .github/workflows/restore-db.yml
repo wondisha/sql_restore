@@ -1,0 +1,33 @@
+name: Restore Prod -> Dev (Template)
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_url:
+        description: 'URL to the production backup (can include SAS token)'
+        required: true
+      target_database:
+        description: 'Target database name in dev'
+        required: true
+      post_restore_script:
+        description: 'Optional path to post-restore SQL script (on runner)'
+        required: false
+
+jobs:
+  restore:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure scripts folder
+        run: |
+          if (-not (Test-Path scripts)) { New-Item -ItemType Directory -Path scripts | Out-Null }
+        shell: pwsh
+
+      - name: Run restore script (Integrated Auth)
+        shell: pwsh
+        run: |
+          Write-Host "Starting restore using Windows Integrated Authentication"
+          Write-Host "Note: self-hosted runner recommended with access to SQL Server and sqlcmd installed"
+          .\scripts\restore-prod-to-dev.ps1 -BackupUrl "${{ github.event.inputs.backup_url }}" -TargetDatabase "${{ github.event.inputs.target_database }}" -PostRestoreScript "${{ github.event.inputs.post_restore_script }}"
