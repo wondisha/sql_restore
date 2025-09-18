@@ -1,33 +1,45 @@
-name: Restore Prod -> Dev (Template)
+name: Restore Prod Backup to Dev
 
 on:
   workflow_dispatch:
     inputs:
       backup_url:
-        description: 'URL to the production backup (can include SAS token)'
+        description: 'Full URL or local/UNC path to the backup file'
         required: true
       target_database:
         description: 'Target database name in dev'
         required: true
-      post_restore_script:
-        description: 'Optional path to post-restore SQL script (on runner)'
+      execute:
+        description: 'Set to "true" to perform the restore (default: dry-run only)'
         required: false
+        default: 'false'
 
 jobs:
   restore:
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows]   # <-- self-hosted Windows runner label
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Ensure scripts folder
-        run: |
-          if (-not (Test-Path scripts)) { New-Item -ItemType Directory -Path scripts | Out-Null }
+      - name: Dry-run restore (generate RESTORE SQL only)
         shell: pwsh
+        run: |
+          $backup = "${{ github.event.inputs.backup_url }}"
+          $target = "${{ github.event.inputs.target_database }}"
+          Write-Host "Dry-run: building restore SQL for $backup -> $target"
+          # Try repository script locations
+          $dry = Join-Path $env:GITHUB_WORKSPACE 'scripts\dry_run_restore.ps1'
+          if (-not (Test-Path $dry)) { Write-Error "dry-run script not found at $dry"; exit 2 }
+          & $dry -BackupPath $backup -TargetDatabase $target
 
-      - name: Run restore script (Integrated Auth)
+      - name: Execute restore (only if requested)
+        if: ${{ github.event.inputs.execute == 'true' }}
         shell: pwsh
         run: |
-          Write-Host "Starting restore using Windows Integrated Authentication"
-          Write-Host "Note: self-hosted runner recommended with access to SQL Server and sqlcmd installed"
-          .\scripts\restore-prod-to-dev.ps1 -BackupUrl "${{ github.event.inputs.backup_url }}" -TargetDatabase "${{ github.event.inputs.target_database }}" -PostRestoreScript "${{ github.event.inputs.post_restore_script }}"
+          Write-Host "Executing actual restore (user requested execute=true)"
+          $backup = "${{ github.event.inputs.backup_url }}"
+          $target = "${{ github.event.inputs.target_database }}"
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts\restore-prod-to-dev.ps1'
+          if (-not (Test-Path $script)) { Write-Error "restore script not found at $script"; exit 2 }
+          # Call your script with the parameters your script expects (update if names differ)
+          & $script -BackupUrl $backup -TargetDatabase $target
