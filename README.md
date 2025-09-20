@@ -35,3 +35,14 @@ Safety
 
 License
 - No license specified.
+
+Self-hosted runner
+-------------------
+
+ - **Purpose:** Use a self-hosted Windows runner when you need Windows Integrated Authentication (domain credentials) for `sqlcmd -E`.
+ - **Prerequisites:** Windows Server or Windows 10/11 machine joined to your AD domain, `sqlcmd` installed, network access to the SQL Server and backup storage, and a service or user account with the necessary SQL restore privileges.
+ - **Register runner:** On GitHub -> Settings -> Actions -> Runners for your repository (or organization), add a new self-hosted runner. Download the runner package and run the `config` command on the runner host. Install as a service for reliability.
+ - **Runner account:** Configure the runner service to run under a domain account that has permission to read the backup location (UNC/HTTP) and to perform restores on the SQL Server.
+ - **Labels:** The workflow uses `runs-on: [self-hosted, windows]`. If you create a more specific label (for example `sql-restore-runner`), update the workflow `runs-on` value accordingly.
+ - **Security:** Keep the runner host patched and isolated. Only add runners you control to repositories that you trust. Do not place secrets on the runner machine without strict access controls.
+

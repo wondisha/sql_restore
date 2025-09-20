@@ -1,42 +1,25 @@
-<<<<<<< HEAD
-name: Restore Prod -> Dev (Template)
-=======
 name: Restore Prod Backup to Dev
->>>>>>> origin/main
 
 on:
   workflow_dispatch:
     inputs:
       backup_url:
-<<<<<<< HEAD
-        description: 'URL or local/UNC path to the production backup (can include SAS token)'
-=======
-        description: 'Full URL or local/UNC path to the backup file'
->>>>>>> origin/main
+        description: 'Full URL or local/UNC path to the backup file (can include SAS token)'
         required: true
       target_database:
         description: 'Target database name in dev'
         required: true
-<<<<<<< HEAD
       post_restore_script:
         description: 'Optional path to post-restore SQL script (on runner)'
         required: false
       execute:
-        description: 'Set to "true" to perform the restore. Default is dry-run only.'
-=======
-      execute:
         description: 'Set to "true" to perform the restore (default: dry-run only)'
->>>>>>> origin/main
         required: false
         default: 'false'
 
 jobs:
   restore:
-<<<<<<< HEAD
     runs-on: [self-hosted, windows]
-=======
-    runs-on: [self-hosted, windows]   # <-- self-hosted Windows runner label
->>>>>>> origin/main
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,10 +30,6 @@ jobs:
           $backup = "${{ github.event.inputs.backup_url }}"
           $target = "${{ github.event.inputs.target_database }}"
           Write-Host "Dry-run: building restore SQL for $backup -> $target"
-<<<<<<< HEAD
-=======
-          # Try repository script locations
->>>>>>> origin/main
           $dry = Join-Path $env:GITHUB_WORKSPACE 'scripts\dry_run_restore.ps1'
           if (-not (Test-Path $dry)) { Write-Error "dry-run script not found at $dry"; exit 2 }
           & $dry -BackupPath $backup -TargetDatabase $target
@@ -64,9 +43,5 @@ jobs:
           $target = "${{ github.event.inputs.target_database }}"
           $script = Join-Path $env:GITHUB_WORKSPACE 'scripts\restore-prod-to-dev.ps1'
           if (-not (Test-Path $script)) { Write-Error "restore script not found at $script"; exit 2 }
-<<<<<<< HEAD
-          & $script -BackupUrl $backup -TargetDatabase $target -PostRestoreScript "${{ github.event.inputs.post_restore_script }}"
-=======
-          # Call your script with the parameters your script expects (update if names differ)
-          & $script -BackupUrl $backup -TargetDatabase $target
->>>>>>> origin/main
+          $post = '${{ github.event.inputs.post_restore_script }}'
+          & $script -BackupUrl $backup -TargetDatabase $target -PostRestoreScript $post
