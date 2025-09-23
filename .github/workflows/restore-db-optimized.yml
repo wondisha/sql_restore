@@ -1,0 +1,128 @@
+name: Restore Prod Backup to Dev (Optimized)
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_url:
+        description: 'Full URL or local/UNC path to the backup file (can include SAS token)'
+        required: true
+      target_database:
+        description: 'Target database name in dev'
+        required: true
+      post_restore_script:
+        description: 'Optional path to post-restore SQL script (on runner)'
+        required: false
+      execute:
+        description: 'Set to "true" to perform the restore (default: dry-run only)'
+        required: false
+        default: 'false'
+      use_optimized_scripts:
+        description: 'Use optimized scripts for better performance'
+        required: false
+        default: 'true'
+
+jobs:
+  restore:
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 60  # Add timeout to prevent hanging jobs
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Environment
+        shell: pwsh
+        run: |
+          # Pre-validate environment to fail fast
+          Write-Host "Validating environment..."
+          
+          # Check sqlcmd availability
+          if (-not (Get-Command sqlcmd -ErrorAction SilentlyContinue)) {
+            Write-Error "sqlcmd not found in PATH"
+            exit 1
+          }
+          
+          # Check backup URL accessibility (for URLs only)
+          $backup = "${{ github.event.inputs.backup_url }}"
+          if ($backup -match '^https?://') {
+            try {
+              $response = Invoke-WebRequest -Uri $backup -Method Head -UseBasicParsing -TimeoutSec 30
+              Write-Host "Backup URL is accessible (Status: $($response.StatusCode))"
+            }
+            catch {
+              Write-Warning "Could not validate backup URL accessibility: $_"
+            }
+          }
+          
+          Write-Host "Environment validation complete"
+
+      - name: Dry-run restore (generate RESTORE SQL only)
+        shell: pwsh
+        run: |
+          $backup = "${{ github.event.inputs.backup_url }}"
+          $target = "${{ github.event.inputs.target_database }}"
+          $useOptimized = "${{ github.event.inputs.use_optimized_scripts }}" -eq 'true'
+          
+          Write-Host "Dry-run: building restore SQL for $backup -> $target"
+          
+          if ($useOptimized) {
+            $dry = Join-Path $env:GITHUB_WORKSPACE 'scripts\dry_run_restore-optimized.ps1'
+            if (-not (Test-Path $dry)) { 
+              Write-Error "Optimized dry-run script not found at $dry"; 
+              exit 2 
+            }
+            & $dry -BackupPath $backup -TargetDatabase $target
+          } else {
+            $dry = Join-Path $env:GITHUB_WORKSPACE 'scripts\dry_run_restore.ps1'
+            if (-not (Test-Path $dry)) { 
+              Write-Error "Dry-run script not found at $dry"; 
+              exit 2 
+            }
+            & $dry -BackupPath $backup -TargetDatabase $target
+          }
+
+      - name: Execute restore (only if requested)
+        if: ${{ github.event.inputs.execute == 'true' }}
+        shell: pwsh
+        run: |
+          Write-Host "Executing actual restore (user requested execute=true)"
+          $backup = "${{ github.event.inputs.backup_url }}"
+          $target = "${{ github.event.inputs.target_database }}"
+          $useOptimized = "${{ github.event.inputs.use_optimized_scripts }}" -eq 'true'
+          $post = '${{ github.event.inputs.post_restore_script }}'
+          
+          if ($useOptimized) {
+            $script = Join-Path $env:GITHUB_WORKSPACE 'scripts\restore-prod-to-dev-optimized.ps1'
+            if (-not (Test-Path $script)) { 
+              Write-Error "Optimized restore script not found at $script"; 
+              exit 2 
+            }
+            & $script -BackupUrl $backup -TargetDatabase $target -PostRestoreScript $post
+          } else {
+            $script = Join-Path $env:GITHUB_WORKSPACE 'scripts\restore-prod-to-dev.ps1'
+            if (-not (Test-Path $script)) { 
+              Write-Error "Restore script not found at $script"; 
+              exit 2 
+            }
+            & $script -BackupUrl $backup -TargetDatabase $target -PostRestoreScript $post
+          }
+
+      - name: Cleanup and Summary
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "=== Workflow Summary ==="
+          Write-Host "Backup URL: ${{ github.event.inputs.backup_url }}"
+          Write-Host "Target Database: ${{ github.event.inputs.target_database }}"
+          Write-Host "Execute: ${{ github.event.inputs.execute }}"
+          Write-Host "Use Optimized Scripts: ${{ github.event.inputs.use_optimized_scripts }}"
+          Write-Host "Workflow Status: ${{ job.status }}"
+          
+          # Log any remaining temp files (for debugging)
+          $tempFiles = Get-ChildItem -Path $env:TEMP -Filter "restore-*" -Directory -ErrorAction SilentlyContinue
+          if ($tempFiles) {
+            Write-Host "Remaining temp directories: $($tempFiles.Count)"
+            foreach ($temp in $tempFiles) {
+              Write-Host "  - $($temp.FullName)"
+            }
+          }
